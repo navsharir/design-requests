@@ -22,7 +22,7 @@ Every five minutes it scans configured boards and the Edits folders it created. 
 2. Install Wrangler with `npm install --save-dev wrangler`, run `npm test`, then `npx wrangler deploy`. The checked-in configuration starts disabled.
 3. Add these Worker secrets using Cloudflare's dashboard or `npx wrangler secret put NAME`. Keep tokens out of GitHub, logs, Pages, and chat:
    - `MONDAY_TOKEN`: read board items and update link columns.
-   - `FRAME_TOKEN`: a supported Frame.io V4 API credential with access to the target account/project and folder creation. Plan token refresh/rotation according to the credential's lifetime.
+   - Frame.io OAuth: `FRAME_CLIENT_ID`, `FRAME_CLIENT_SECRET`, and the initial `FRAME_REFRESH_TOKEN`, obtained through the app's approved OAuth flow. The worker refreshes short-lived access tokens and persists rotated refresh tokens in its Durable Object. An uncertain refresh is held for reconnection. Alternatively, use `FRAME_TOKEN` for a supported direct credential; legacy developer tokens also require `FRAME_LEGACY_AUTH` set to `true`. Do not use a one-hour access token as a permanent unattended credential.
    - `FRAME_ACCOUNT_ID`: the verified Frame.io account ID.
    - `SLACK_TOKEN`: bot credential with `chat:write`; invite the bot to the review channel.
    - `BOARD_MAP`: JSON array using `board-map.example.json` as its shape. Each board needs its own verified link column and client **Content** folder ID, plus the review channel ID. Configuration is kept in a secret because this repository is public.

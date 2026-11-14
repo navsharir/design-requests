@@ -1,7 +1,7 @@
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export class Api {
-  constructor(env, transport = fetch) { this.env = env; this.transport = transport; this.calls = 0; }
+  constructor(env, transport = fetch, tokenProvider) { this.env = env; this.transport = transport; this.calls = 0; this.tokenProvider = tokenProvider; }
   checkBudget() {
     if (this.calls >= 40) { const error = new Error('Continue on next scheduled batch'); error.code = 'BATCH_LIMIT'; throw error; }
   }
@@ -42,8 +42,9 @@ export class Api {
   }
   async frame(path, options = {}) {
     await sleep(650); // Stay below folder-create and folder-list limits.
+    const token = this.tokenProvider ? await this.tokenProvider() : this.env.FRAME_TOKEN;
     return this.request(`https://api.frame.io/v4/accounts/${encodeURIComponent(this.env.FRAME_ACCOUNT_ID)}/${path}`, {
-      ...options, headers:{Authorization:`Bearer ${this.env.FRAME_TOKEN}`, 'Content-Type':'application/json'}
+      ...options, headers:{Authorization:`Bearer ${token}`, 'Content-Type':'application/json',...(this.env.FRAME_LEGACY_AUTH === 'true' ? {'x-frameio-legacy-token-auth':'true'} : {})}
     });
   }
   async children(folderId) {
