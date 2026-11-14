@@ -123,3 +123,14 @@ test('launch cutoff excludes concepts created during the disabled pilot',async()
  await f.engine.run();assert.equal(f.count,0);
  f.item.created_at='2026-11-14T11:35:00Z';await f.engine.run();assert.equal(f.count,5);
 });
+
+test('a new board uses its approved cutoff rather than discarding items before its first scan',async()=>{
+ const f=fixture();f.engine.board={...board,activationCutoff:'2026-11-14T10:00:00Z'};
+ await f.engine.run();assert.equal(f.count,5);
+ assert.equal(await f.store.get('startedAt'),'2026-11-14T10:00:00Z');
+});
+test('budget exhausted after checkpoint leaves no false uncertain creation',async()=>{
+ const f=fixture();f.api.createFolder=async()=>{const e=new Error('budget');e.code='BATCH_LIMIT';throw e;};
+ await assert.rejects(()=>f.engine.ensure('content','Raw','pending',true),e=>e.code==='BATCH_LIMIT');
+ assert.equal(await f.store.get('pending'),undefined);
+});

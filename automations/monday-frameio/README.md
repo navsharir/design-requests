@@ -10,17 +10,15 @@ Client / Content / YYYY / existing month / Concept name /
 
 It writes the concept-folder link into the existing Monday Frame.io Folder column. It does not create instructions files or send Slack messages. The original review automation handles uploads, editor tags, reviewers and video attachments.
 
-## Bambuu enabled — 14 November 2026
+## Multiple-board rollout
 
-User approved enabling **folder creation and Monday links only** for Bambuu. Deployed as `bambuu-frameio-review` on Cloudflare Free. `ENABLED=true`; the test-item restriction is removed. `BOARD_MAP` contains only Bambuu board 5092056182 and its verified Content folder. Other brands are not enabled. Concepts created before the launch cutoff of 2026-11-14T15:55:21Z are excluded, so items added during the disabled pilot are not backfilled.
+Configure each brand's verified Monday board, existing Frame.io Folder link column, Content folder and activation cutoff through encrypted `BOARD_MAP`. Runtime account mappings and test evidence belong in private configuration, not this public repository. Non-client boards and subitem boards are not included.
 
-Each newly named concept receives Raw and Edits under the current existing year/month folder; the concept-folder URL appears in the existing Frame.io Folder column. There is no instructions file, no new board layout, and no Slack sender in this service. The original review automation remains untouched and handles any subsequent uploads.
+Each new named concept receives exactly Raw and Edits beneath its current year/month/concept folder. No instructions files, Slack messages, reviewer routing or board-layout changes are created by this service. Existing Frame.io links and items before the per-board activation boundary are preserved.
 
-The earlier pilot verified inherited Frame.io access, Raw/Edits creation, the Monday link and repeat-scan idempotency. A labelled folder-only launch check was created as Monday item 3358439009 to verify the scheduled scan after activation. The earlier test item 3358423550 is retained for reference.
+All boards share a single 40-request budget per invocation. A persisted board cursor resumes an interrupted board on the next scheduled scan. Monday uses 500-item pages to keep routine polling efficient. The scanner rotates across boards instead of repeatedly starting with the first brand. New board activation uses its approved cutoff, so concepts created after activation but before the first scan are not discarded.
 
-Reviewer routing changes, consistent Slack sender identity, and historical message editing are outside this folder-only rollout. No changes have been made to the original Slack automation. The user clarified Dubai should use Junior, Sammy and Foong only; that preference is not applied by this service because it never sends or edits Slack messages.
-
-Validation: 37 automated tests pass, including the launch cutoff and Raw repair. `/health` returns enabled state, mode, and the most recent scan's completion time/result, without credentials or customer names.
+Validation: 43 automated tests cover global request budgeting, board rotation, launch boundaries, pending-write recovery, Raw repair and existing-link preservation. `/health` reports scan completion, configured/scanned board counts and external request usage without account identifiers.
 
 ## Configuration and deployment
 
@@ -28,7 +26,7 @@ Validation: 37 automated tests pass, including the launch cutoff and Raw repair.
 2. Add encrypted Worker secrets `MONDAY_TOKEN`, `FRAME_ACCOUNT_ID`, `FRAME_CLIENT_ID`, `FRAME_CLIENT_SECRET`, `SETUP_SECRET`, and `BOARD_MAP`. Never put credentials in this repository, browser URLs, logs or chat. `SLACK_TOKEN` is optional for the setup identity diagnostic only; this service cannot post messages.
 3. `BOARD_MAP` follows `board-map.example.json`. Each entry identifies its Monday board, link column and verified Frame.io Content folder. The historical `slackChannelId` field remains for configuration compatibility and is not used to send messages.
 4. Deploy with `npx wrangler deploy`. Use the protected `/setup` page to connect approved Frame.io OAuth credentials. Tokens and rotating refresh tokens are persisted in the Durable Object; an uncertain refresh requires reconnection.
-5. Bambuu is already enabled. Setup routes are unavailable while enabled. Disable with `ENABLED=false` and redeploy. Broader brand rollout requires separate verified board/folder mappings and user authorization. Keep `ACTIVATED_AT` pinned across deployments; moving it would change which items are eligible.
+5. Set `ENABLED=true` only for an authorized rollout. Setup routes are unavailable while enabled. Disable with `ENABLED=false` and redeploy. Keep existing activation cutoffs pinned across deployments; moving them changes item eligibility. New boards should provide their own `activationCutoff` in `BOARD_MAP`.
 
 The scheduled scan runs every five minutes when enabled. Newly created items settle for two minutes, allowing the existing debrief flow to populate its own link. Existing links and items older than the persisted activation boundary are skipped. Existing month folders are matched by numeric month prefix, including full month-name variations; ambiguous matches stop safely.
 

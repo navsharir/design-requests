@@ -25,3 +25,10 @@ test('free-plan batch stops before the 41st external request',async()=>{
   await assert.rejects(()=>api.request('https://example.com'),e=>e.code==='BATCH_LIMIT');
   assert.equal(attempts,40);
 });
+
+test('Monday uses full-sized pages on both initial and continuation reads',async()=>{
+ const api=new Api({});const queries=[];
+ api.monday=async query=>{queries.push(query);return queries.length===1?{boards:[{items_page:{cursor:'next',items:[{id:'one'}]}}]}:{next_items_page:{cursor:null,items:[{id:'two'}]}};};
+ const items=[];for await(const item of api.items({boardId:'board'}))items.push(item.id);
+ assert.deepEqual(items,['one','two']);assert.ok(queries.every(q=>q.includes('limit:500')));
+});

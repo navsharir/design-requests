@@ -32,7 +32,13 @@ export class Engine {
     if (saved?.pending) throw new Error('Uncertain folder creation: check Frame.io before resetting the pending record');
     this.api.checkBudget?.();
     await this.store.put(key,{pending:true,name,parent});
-    const folder = await this.api.createFolder(parent,name);
+    let folder;
+    try { folder=await this.api.createFolder(parent,name); }
+    catch(error) {
+      // Budget exhaustion happens before the external write, so retry is safe.
+      if(error.code==='BATCH_LIMIT')await this.store.delete(key);
+      throw error;
+    }
     if (!folder?.id || !folder.view_url) throw new Error('Frame folder response incomplete');
     await this.store.put(key,folder); return folder;
   }
@@ -73,7 +79,7 @@ export class Engine {
   }
   async run() {
     let startedAt = await this.store.get('startedAt');
-    if (!startedAt) { startedAt = this.now().toISOString(); await this.store.put('startedAt',startedAt); }
+    if (!startedAt) { startedAt = this.board.activationCutoff || this.now().toISOString(); await this.store.put('startedAt',startedAt); }
     if(this.board.activationCutoff && Date.parse(this.board.activationCutoff)>Date.parse(startedAt))startedAt=this.board.activationCutoff;
     const failures = [];
     for await (const item of this.api.items(this.board)) {

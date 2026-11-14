@@ -22,12 +22,12 @@ export class Api {
   }
   async *items(board) {
     const fields = 'id name created_at column_values { id value text }';
-    let page = (await this.monday(`query($ids:[ID!]!) { boards(ids:$ids) { items_page(limit:100) { cursor items { ${fields} } } } }`, {ids:[board.boardId]})).boards?.[0]?.items_page;
+    let page = (await this.monday(`query($ids:[ID!]!) { boards(ids:$ids) { items_page(limit:500) { cursor items { ${fields} } } } }`, {ids:[board.boardId]})).boards?.[0]?.items_page;
     if (!page) throw new Error('Monday board unavailable');
     while (true) {
       yield* page.items;
       if (!page.cursor) break;
-      page = (await this.monday(`query($cursor:String!) { next_items_page(limit:100,cursor:$cursor) { cursor items { ${fields} } } }`, {cursor:page.cursor})).next_items_page;
+      page = (await this.monday(`query($cursor:String!) { next_items_page(limit:500,cursor:$cursor) { cursor items { ${fields} } } }`, {cursor:page.cursor})).next_items_page;
     }
   }
   async item(id) {

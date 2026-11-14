@@ -3,6 +3,7 @@ import {Api} from './api.js';
 import {Engine} from './engine.js';
 import {frameAccessToken} from './frame-auth.js';
 import {setup} from './setup.js';
+import {scanBoardBatch} from './batch.js';
 
 function boards(env) {
   const list = JSON.parse(env.BOARD_MAP || '[]');
@@ -30,17 +31,20 @@ export default {
 export class BoardSync extends DurableObject {
   async fetch(request) {
     if(new URL(request.url).pathname.startsWith('/setup'))return setup(request,this.env,this.ctx.storage,fetch,Date.now,()=>this.runOnce());
-    if(new URL(request.url).pathname==='/status')return Response.json({enabled:this.env.ENABLED==='true',mode:'folders-only',lastRun:await this.ctx.storage.get('lastRun'),lastRunOk:await this.ctx.storage.get('lastRunOk')},{headers:{'Cache-Control':'no-store'}});
+    if(new URL(request.url).pathname==='/status')return Response.json({enabled:this.env.ENABLED==='true',mode:'folders-only',lastRun:await this.ctx.storage.get('lastRun'),lastRunOk:await this.ctx.storage.get('lastRunOk'),batch:await this.ctx.storage.get('lastBatch')},{headers:{'Cache-Control':'no-store'}});
     return this.runOnce();
   }
   async runOnce() {
     if (this.running) return Response.json({busy:true});
     this.running = true;
     try {
-      const reports=[];
-      for (const board of boards(this.env)) {
+      const configured=boards(this.env);
+      const storage=this.ctx.storage;
+      const api=new Api(this.env);
+      const authStore={get:k=>storage.get(k),put:(k,v)=>storage.put(k,v)};
+      api.tokenProvider=()=>{api.checkBudget();return frameAccessToken(this.env,authStore,(...args)=>api.request(...args));};
+      const batch=await scanBoardBatch(configured,storage,async board=> {
         const prefix = `board:${board.boardId}:`;
-        const storage = this.ctx.storage;
         const store = {
           get:key=>storage.get(prefix+key), put:(key,value)=>storage.put(prefix+key,value), delete:key=>storage.delete(prefix+key),
           list:async ({prefix:p})=>{
@@ -54,23 +58,22 @@ export class BoardSync extends DurableObject {
           }
         };
         try {
-          const api = new Api(this.env);
-          const authStore = {get:k=>storage.get(k),put:(k,v)=>storage.put(k,v)};
-          api.tokenProvider=()=>{api.checkBudget();return frameAccessToken(this.env,authStore,(...args)=>api.request(...args));};
           board.testItemId=this.env.TEST_ITEM_ID;
-          board.activationCutoff=this.env.ACTIVATED_AT;
+          board.activationCutoff ||= this.env.ACTIVATED_AT;
           const result = await new Engine(api,store,board).run();
           if(board.testItemId){const test=await api.item(board.testItemId);result.test={createdAt:test.created_at,startedAt:await store.get('startedAt'),linked:test.column_values.find(c=>c.id===board.linkColumnId)?.value};}
           console.log(JSON.stringify({boardId:board.boardId,...result}));
           const errors=await storage.list({prefix:prefix+'error:',limit:20});
-          reports.push({boardId:board.boardId,...result,errors:[...errors].map(([key,value])=>({itemId:key.slice((prefix+'error:').length),message:value.message}))});
+          return {boardId:board.boardId,...result,errors:[...errors].map(([key,value])=>({itemId:key.slice((prefix+'error:').length),message:value.message}))};
         } catch (error) {
-          if (error.code === 'BATCH_LIMIT') { console.log(JSON.stringify({boardId:board.boardId,batched:true})); reports.push({boardId:board.boardId,batched:true});continue; }
+          if (error.code === 'BATCH_LIMIT') throw error;
           await storage.put(prefix+'lastError',{message:error.message,at:new Date().toISOString()});
           console.error(JSON.stringify({boardId:board.boardId,failed:true}));
-          reports.push({boardId:board.boardId,failed:true,message:error.message});
+          return {boardId:board.boardId,failed:true,message:error.message};
         }
-      }
+      });
+      const reports=batch.reports;
+      await storage.put('lastBatch',{configuredBoards:configured.length,scannedBoards:reports.length,batched:batch.batched,externalRequests:api.calls});
       await this.ctx.storage.put('lastRun',new Date().toISOString());
       await this.ctx.storage.put('lastRunOk',reports.every(r=>!r.failed));
       return Response.json({ok:reports.every(r=>!r.failed),boards:reports},{headers:{'Cache-Control':'no-store'}});
