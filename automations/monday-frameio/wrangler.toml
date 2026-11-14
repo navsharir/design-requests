@@ -1,0 +1,21 @@
+name = "bambuu-frameio-review"
+main = "src/worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[durable_objects.bindings]]
+name = "BOARDS"
+class_name = "BoardSync"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BoardSync"]
+
+[vars]
+ENABLED = "false"
+
+[observability]
+enabled = true
