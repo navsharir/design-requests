@@ -116,3 +116,10 @@ test('adds a genuinely missing Raw folder to the existing linked pilot',async()=
  assert.deepEqual(f.folders.get(concept.id).map(x=>x.name).sort(),['Edits','Raw']);
  await f.engine.provision(f.item);assert.equal(f.count,3);
 });
+
+test('launch cutoff excludes concepts created during the disabled pilot',async()=>{
+ const f=fixture();await f.store.put('startedAt','2026-11-14T10:00:00Z');
+ f.engine.board={...board,activationCutoff:'2026-11-14T11:30:00Z'};
+ await f.engine.run();assert.equal(f.count,0);
+ f.item.created_at='2026-11-14T11:35:00Z';await f.engine.run();assert.equal(f.count,5);
+});

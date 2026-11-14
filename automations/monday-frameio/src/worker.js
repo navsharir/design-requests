@@ -15,7 +15,8 @@ function boards(env) {
 export default {
   async fetch(request,env) {
     if(new URL(request.url).pathname.startsWith('/setup')) return env.BOARDS.getByName('sync-v1').fetch(request);
-    return Response.json({service:'Monday → Frame.io review automation'});
+    if(new URL(request.url).pathname==='/health')return env.BOARDS.getByName('sync-v1').fetch('https://internal/status');
+    return Response.json({service:'Monday → Frame.io folders'});
   },
   async scheduled(_event, env, ctx) {
     if (env.ENABLED !== 'true') return;
@@ -29,6 +30,7 @@ export default {
 export class BoardSync extends DurableObject {
   async fetch(request) {
     if(new URL(request.url).pathname.startsWith('/setup'))return setup(request,this.env,this.ctx.storage,fetch,Date.now,()=>this.runOnce());
+    if(new URL(request.url).pathname==='/status')return Response.json({enabled:this.env.ENABLED==='true',mode:'folders-only',lastRun:await this.ctx.storage.get('lastRun'),lastRunOk:await this.ctx.storage.get('lastRunOk')},{headers:{'Cache-Control':'no-store'}});
     return this.runOnce();
   }
   async runOnce() {
@@ -56,6 +58,7 @@ export class BoardSync extends DurableObject {
           const authStore = {get:k=>storage.get(k),put:(k,v)=>storage.put(k,v)};
           api.tokenProvider=()=>{api.checkBudget();return frameAccessToken(this.env,authStore,(...args)=>api.request(...args));};
           board.testItemId=this.env.TEST_ITEM_ID;
+          board.activationCutoff=this.env.ACTIVATED_AT;
           const result = await new Engine(api,store,board).run();
           if(board.testItemId){const test=await api.item(board.testItemId);result.test={createdAt:test.created_at,startedAt:await store.get('startedAt'),linked:test.column_values.find(c=>c.id===board.linkColumnId)?.value};}
           console.log(JSON.stringify({boardId:board.boardId,...result}));
@@ -69,6 +72,7 @@ export class BoardSync extends DurableObject {
         }
       }
       await this.ctx.storage.put('lastRun',new Date().toISOString());
+      await this.ctx.storage.put('lastRunOk',reports.every(r=>!r.failed));
       return Response.json({ok:reports.every(r=>!r.failed),boards:reports},{headers:{'Cache-Control':'no-store'}});
     } finally { this.running = false; }
   }

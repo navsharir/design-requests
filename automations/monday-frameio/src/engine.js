@@ -74,6 +74,7 @@ export class Engine {
   async run() {
     let startedAt = await this.store.get('startedAt');
     if (!startedAt) { startedAt = this.now().toISOString(); await this.store.put('startedAt',startedAt); }
+    if(this.board.activationCutoff && Date.parse(this.board.activationCutoff)>Date.parse(startedAt))startedAt=this.board.activationCutoff;
     const failures = [];
     for await (const item of this.api.items(this.board)) {
       if(this.board.testItemId && item.id!==this.board.testItemId)continue;

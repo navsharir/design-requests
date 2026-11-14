@@ -15,8 +15,8 @@ tag = "v1"
 new_sqlite_classes = ["BoardSync"]
 
 [vars]
-ENABLED = "false"
-TEST_ITEM_ID = "3358423550"
+ENABLED = "true"
+ACTIVATED_AT = "2026-11-14T15:55:21Z"
 
 [observability]
 enabled = true
