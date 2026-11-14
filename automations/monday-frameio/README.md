@@ -6,15 +6,19 @@ Add a named concept to a configured Monday board. This service creates:
 Client / Content / 2026 / 11 - NOV / Concept name / Edits
 ```
 
-It writes the concept folder URL to the existing Monday Frame.io Folder column. Completed uploads in its Edits folder generate a review message with Frame.io and Monday links. It watches new head versions in version stacks too. No shoot debrief submission is required.
+It writes the concept folder URL to the existing Monday Frame.io Folder column. The existing 10Ten Bot picks up completed uploads in Edits and sends its normal review message and video. The optional standalone notifier stays disabled to avoid duplicates. No shoot debrief submission is required.
 
-## Status
+## Status — tested 14 November 2026
 
-Deployed to the owner's existing Cloudflare account as `bambuu-frameio-review`, with persistent Durable Object storage and a Bambuu-only board mapping. **Disabled pending runtime credentials and a live pilot test.** No live folders, Monday values, or Slack messages have been changed by this service. The public design-request webpage is independent of this service.
+Bambuu live test passed: Monday item 3358423550 acquired its Frame.io link; the existing `11 - November` folder was reused; the concept and Edits folders were created; the test video uploaded successfully. Folder access matches the inherited Bambuu team access.
 
-Each run is limited to 40 external API requests, below the Free plan's 50-request limit. Incomplete provisioning resumes using persisted checkpoints; folder review rotates through saved records across runs. This batch limit still needs observation under live load, including Cloudflare CPU and duration limits.
+The labelled pilot bot sent a preview at Slack timestamp 1794670538.096529. Crucially, the existing **10Ten Bot** independently picked up this new Edits folder and posted its normal message, reviewer mentions and attached video at 1794670571.183629. No changes to the existing bot were needed. Cloudflare's own Slack sending is now **disabled** to prevent duplicate notifications. Future launch should retain the existing review automation and enable folder/link creation only.
 
-Every five minutes it scans configured boards and the Edits folders it created. New items must be at least two minutes old, allowing the existing debrief integration to populate its own link first. Items with existing links are skipped. The original debrief source was not accessible, so coexistence still needs a live test; a very slow debrief can race the final link check. If this occurs, stop this service and reconcile the item/folder before continuing.
+`ENABLED=false` keeps scheduled work disabled pending user review. `TEST_ITEM_ID=3358423550` restricts controlled scans to the approved test concept. `ENABLE_SLACK_NOTIFICATIONS=false` leaves reviews to the existing bot. Remove the test-item restriction only for an authorized board launch. Existing board layout, columns, folders and debrief integration remain unchanged; the test item, folders and messages are retained for review.
+
+Protected `/setup` forms support approved OAuth connection, Slack identity verification and a controlled scan. Set encrypted `SETUP_SECRET`; never publish it. Frame.io OAuth tokens are persisted in the Durable Object and refreshed with rotation. Setup is unavailable while enabled.
+
+Runs use at most 40 external requests. New items settle for two minutes and existing links are preserved. Persistent activation boundaries exclude historical items. Live high-volume operation and a simultaneous slow debrief still require observation before expanding beyond Bambuu.
 
 ## Deploy
 
@@ -22,7 +26,7 @@ Every five minutes it scans configured boards and the Edits folders it created. 
 2. Install Wrangler with `npm install --save-dev wrangler`, run `npm test`, then `npx wrangler deploy`. The checked-in configuration starts disabled.
 3. Add these Worker secrets using Cloudflare's dashboard or `npx wrangler secret put NAME`. Keep tokens out of GitHub, logs, Pages, and chat:
    - `MONDAY_TOKEN`: read board items and update link columns.
-   - Frame.io OAuth: `FRAME_CLIENT_ID`, `FRAME_CLIENT_SECRET`, and the initial `FRAME_REFRESH_TOKEN`, obtained through the app's approved OAuth flow. The worker refreshes short-lived access tokens and persists rotated refresh tokens in its Durable Object. An uncertain refresh is held for reconnection. Alternatively, use `FRAME_TOKEN` for a supported direct credential; legacy developer tokens also require `FRAME_LEGACY_AUTH` set to `true`. Do not use a one-hour access token as a permanent unattended credential.
+   - Frame.io OAuth: `FRAME_CLIENT_ID`, `FRAME_CLIENT_SECRET`, then connect through the protected `/setup` OAuth flow. The worker refreshes short-lived access tokens and persists rotated refresh tokens in its Durable Object. An uncertain refresh is held for reconnection. Alternatively, use `FRAME_TOKEN` for a supported direct credential; legacy developer tokens also require `FRAME_LEGACY_AUTH` set to `true`. Do not use a one-hour access token as a permanent unattended credential.
    - `FRAME_ACCOUNT_ID`: the verified Frame.io account ID.
    - `SLACK_TOKEN`: bot credential with `chat:write`; invite the bot to the review channel.
    - `BOARD_MAP`: JSON array using `board-map.example.json` as its shape. Each board needs its own verified link column and client **Content** folder ID, plus the review channel ID. Configuration is kept in a secret because this repository is public.

@@ -1,7 +1,7 @@
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export class Api {
-  constructor(env, transport = fetch, tokenProvider) { this.env = env; this.transport = transport; this.calls = 0; this.tokenProvider = tokenProvider; }
+  constructor(env, transport = (...args) => fetch(...args), tokenProvider) { this.env = env; this.transport = transport; this.calls = 0; this.tokenProvider = tokenProvider; }
   checkBudget() {
     if (this.calls >= 40) { const error = new Error('Continue on next scheduled batch'); error.code = 'BATCH_LIMIT'; throw error; }
   }

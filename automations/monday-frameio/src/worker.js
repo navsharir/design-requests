@@ -2,6 +2,7 @@ import {DurableObject} from 'cloudflare:workers';
 import {Api} from './api.js';
 import {Engine} from './engine.js';
 import {frameAccessToken} from './frame-auth.js';
+import {setup} from './setup.js';
 
 function boards(env) {
   const list = JSON.parse(env.BOARD_MAP || '[]');
@@ -12,21 +13,29 @@ function boards(env) {
   return list;
 }
 export default {
-  async fetch() { return Response.json({service:'Monday → Frame.io review automation'}); },
+  async fetch(request,env) {
+    if(new URL(request.url).pathname.startsWith('/setup')) return env.BOARDS.getByName('sync-v1').fetch(request);
+    return Response.json({service:'Monday → Frame.io review automation'});
+  },
   async scheduled(_event, env, ctx) {
     if (env.ENABLED !== 'true') return;
     for (const key of ['MONDAY_TOKEN','FRAME_ACCOUNT_ID','SLACK_TOKEN']) if (!env[key]) throw new Error(`Missing secret: ${key}`);
-    if (!env.FRAME_TOKEN && !(env.FRAME_CLIENT_ID && env.FRAME_CLIENT_SECRET && env.FRAME_REFRESH_TOKEN)) throw new Error('Connect Frame.io OAuth');
+    if (!env.FRAME_TOKEN && !(env.FRAME_CLIENT_ID && env.FRAME_CLIENT_SECRET)) throw new Error('Connect Frame.io OAuth');
     // All boards share one object so shared parent folders cannot race each other.
     boards(env);
     ctx.waitUntil(env.BOARDS.getByName('sync-v1').fetch('https://internal/tick'));
   }
 };
 export class BoardSync extends DurableObject {
-  async fetch() {
+  async fetch(request) {
+    if(new URL(request.url).pathname.startsWith('/setup'))return setup(request,this.env,this.ctx.storage,fetch,Date.now,()=>this.runOnce());
+    return this.runOnce();
+  }
+  async runOnce() {
     if (this.running) return Response.json({busy:true});
     this.running = true;
     try {
+      const reports=[];
       for (const board of boards(this.env)) {
         const prefix = `board:${board.boardId}:`;
         const storage = this.ctx.storage;
@@ -46,16 +55,22 @@ export class BoardSync extends DurableObject {
           const api = new Api(this.env);
           const authStore = {get:k=>storage.get(k),put:(k,v)=>storage.put(k,v)};
           api.tokenProvider=()=>{api.checkBudget();return frameAccessToken(this.env,authStore,(...args)=>api.request(...args));};
+          board.testItemId=this.env.TEST_ITEM_ID;
+          board.reviewEnabled=this.env.ENABLE_SLACK_NOTIFICATIONS==='true';
           const result = await new Engine(api,store,board).run();
+          if(board.testItemId){const test=await api.item(board.testItemId);result.test={createdAt:test.created_at,startedAt:await store.get('startedAt'),linked:test.column_values.find(c=>c.id===board.linkColumnId)?.value};}
           console.log(JSON.stringify({boardId:board.boardId,...result}));
+          const errors=await storage.list({prefix:prefix+'error:',limit:20});
+          reports.push({boardId:board.boardId,...result,errors:[...errors].map(([key,value])=>({itemId:key.slice((prefix+'error:').length),message:value.message}))});
         } catch (error) {
-          if (error.code === 'BATCH_LIMIT') { console.log(JSON.stringify({boardId:board.boardId,batched:true})); continue; }
+          if (error.code === 'BATCH_LIMIT') { console.log(JSON.stringify({boardId:board.boardId,batched:true})); reports.push({boardId:board.boardId,batched:true});continue; }
           await storage.put(prefix+'lastError',{message:error.message,at:new Date().toISOString()});
           console.error(JSON.stringify({boardId:board.boardId,failed:true}));
+          reports.push({boardId:board.boardId,failed:true,message:error.message});
         }
       }
       await this.ctx.storage.put('lastRun',new Date().toISOString());
-      return Response.json({ok:true});
+      return Response.json({ok:reports.every(r=>!r.failed),boards:reports},{headers:{'Cache-Control':'no-store'}});
     } finally { this.running = false; }
   }
 }

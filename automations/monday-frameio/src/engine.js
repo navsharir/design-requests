@@ -23,7 +23,7 @@ export class Engine {
     const saved = await this.store.get(key);
     if (saved?.id) return saved;
     const children = await this.api.children(parent);
-    const matches = children.filter(c => c.type === 'folder' && c.name === (saved?.name || name));
+    const matches = children.filter(c => c.type === 'folder' && (c.name === (saved?.name || name) || (shared && !saved?.pending && /^\d{2} - /.test(name) && c.name.startsWith(name.slice(0,5)))));
     if (matches.length > 1) throw new Error('Ambiguous folder name');
     if (matches.length && (shared || saved?.pending)) {
       await this.store.put(key,matches[0]); return matches[0];
@@ -79,7 +79,7 @@ export class Engine {
       if (!await this.api.complete(asset.id)) continue;
       if (!asset.view_url?.startsWith('https://next.frame.io/')) throw new Error('Missing Frame viewer link');
       const monday = `https://10tencreatives.monday.com/boards/${this.board.boardId}/pulses/${record.id}`;
-      const text = `Edit ready for review: ${escape(record.name)}\n${escape(asset.name)}\n<${asset.view_url}|Review in Frame.io> · <${monday}|Open Monday item>`;
+      const text = `:test_tube: TEST — Bambuu Review Pilot\n:briefcase: Bambuu\n:camera: <${asset.view_url}|${escape(record.name)}>\n:scissors: Test upload (no editor action needed)\n:eyes: Junior · Sammy · Foong (preview only)\n<${monday}|Open Monday test item>`;
       this.api.checkBudget?.();
       await this.store.put(key,{pending:true,fileId:asset.id,at:this.now().toISOString()});
       const ts = await this.api.post(this.board.slackChannelId,text);
@@ -91,6 +91,7 @@ export class Engine {
     if (!startedAt) { startedAt = this.now().toISOString(); await this.store.put('startedAt',startedAt); }
     const failures = [];
     for await (const item of this.api.items(this.board)) {
+      if(this.board.testItemId && item.id!==this.board.testItemId)continue;
       // A persisted activation boundary prevents accidental historical backfill.
       if (!item.created_at || Date.parse(item.created_at) < Date.parse(startedAt)) continue;
       // Give the debrief integration two minutes to finish writing its own link.
@@ -104,6 +105,8 @@ export class Engine {
         failures.push(item.id);
       }
     }
+    // The existing 10Ten bot already watches Edits globally; avoid duplicate notifications.
+    if(this.board.reviewEnabled===false)return {failed:[...new Set(failures)].length};
     // Continue monitoring already-linked concepts, including those moved off the board.
     const tracked = await this.store.list({prefix:'item:'});
     const reviewCursor = await this.store.get('reviewCursor');

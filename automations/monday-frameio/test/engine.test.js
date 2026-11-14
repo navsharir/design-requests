@@ -97,3 +97,20 @@ test('batch limit before a write does not leave an uncertain pending record',asy
   await assert.rejects(()=>f.engine.ensure('content','2026','year',true),e=>e.code==='BATCH_LIMIT');
   assert.equal(await f.store.get('year'),undefined); assert.equal(f.count,0);
 });
+
+test('reuses an existing month with a full month name',async()=>{
+  const f=fixture(); const existing=await f.api.createFolder('content','11 - November');
+  const month=await f.engine.ensure('content','11 - NOV','month',true);
+  assert.equal(month.id,existing.id);assert.equal(f.count,1);
+});
+test('folder-only mode never calls the Slack review path',async()=>{
+  const f=fixture();await f.store.put('startedAt','2026-11-14T10:00:00Z');
+  f.engine.board={...board,reviewEnabled:false};
+  f.engine.review=async()=>{throw new Error('must not review');};
+  assert.deepEqual(await f.engine.run(),{failed:0});assert.equal(f.api.posts,0);
+});
+test('pilot allowlist leaves unrelated new items unchanged',async()=>{
+  const f=fixture();await f.store.put('startedAt','2026-11-14T10:00:00Z');
+  f.engine.board={...board,testItemId:'other',reviewEnabled:false};
+  await f.engine.run();assert.equal(f.count,0);assert.equal(f.item.column_values[0].value,null);
+});
