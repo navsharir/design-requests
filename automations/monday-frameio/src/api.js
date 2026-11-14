@@ -65,16 +65,4 @@ export class Api {
   async createFolder(parent, name) {
     return (await this.frame(`folders/${encodeURIComponent(parent)}/folders`, {method:'POST',body:JSON.stringify({data:{name}})})).data;
   }
-  async complete(fileId) { return (await this.frame(`files/${encodeURIComponent(fileId)}/status`)).data.upload_complete === true; }
-  async versions(id) {
-    const result = await this.frame(`version_stacks/${encodeURIComponent(id)}`);
-    return result.data;
-  }
-  async post(channel, text) {
-    const result = await this.request('https://slack.com/api/chat.postMessage', {method:'POST',
-      headers:{Authorization:`Bearer ${this.env.SLACK_TOKEN}`,'Content-Type':'application/json'},
-      body:JSON.stringify({channel,text,unfurl_links:false,unfurl_media:false})});
-    if (!result.ok) throw new Error('Slack rejected message');
-    return result.ts;
-  }
 }

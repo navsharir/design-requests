@@ -15,7 +15,6 @@ export function folderName(name) {
   if (!clean || /^(new item|item)$/i.test(clean)) throw new Error('Concept needs a name');
   return clean;
 }
-const escape = text => text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 export class Engine {
   constructor(api, store, board, now = () => new Date()) { Object.assign(this,{api,store,board,now}); }
@@ -40,7 +39,15 @@ export class Engine {
   async provision(item) {
     const key = `item:${item.id}`;
     let record = await this.store.get(key);
-    if (record?.linked) return record;
+    if (record?.linked) {
+      // Repair previously provisioned pilot folders without touching their existing link or Edits.
+      if (!record.rawId) {
+        const raw = await this.ensure(record.folderId,'Raw',`${key}:raw`,true);
+        record = {...record,rawId:raw.id};
+        await this.store.put(key,record);
+      }
+      return record;
+    }
     if (linkValue(item,this.board.linkColumnId)) return null;
     if (!record) {
       const name = folderName(item.name);
@@ -53,38 +60,16 @@ export class Engine {
       parent = folder.id;
     }
     const concept = await this.ensure(parent,record.name,`${key}:concept`);
+    const raw = await this.ensure(concept.id,'Raw',`${key}:raw`,true);
     const edits = await this.ensure(concept.id,'Edits',`${key}:edits`,true);
     // Re-read just before write: the debrief workflow might have populated the link.
     const current = await this.api.item(item.id);
     const existing = linkValue(current,this.board.linkColumnId);
     if (existing && existing !== concept.view_url) throw new Error('Frame.io link changed; reconciliation needed');
     if (!existing) await this.api.link(this.board,item.id,concept.view_url);
-    record = {...record,linked:true,folderId:concept.id,editsId:edits.id,url:concept.view_url};
+    record = {...record,linked:true,folderId:concept.id,rawId:raw.id,editsId:edits.id,url:concept.view_url};
     await this.store.put(key,record);
     return record;
-  }
-  async review(record) {
-    const assets = await this.api.children(record.editsId);
-    for (let asset of assets) {
-      if (asset.type === 'version_stack') {
-        const stack = await this.api.versions(asset.id);
-        asset = stack.head_version;
-      }
-      if (asset?.type !== 'file' || !asset.id) continue;
-      const key = `sent:${record.id}:${asset.id}`;
-      const previous = await this.store.get(key);
-      if (previous?.sent) continue;
-      // A lost Slack response must be checked by an operator, never auto-reposted.
-      if (previous?.pending) throw new Error('Uncertain Slack delivery; inspect review channel and resolve pending record');
-      if (!await this.api.complete(asset.id)) continue;
-      if (!asset.view_url?.startsWith('https://next.frame.io/')) throw new Error('Missing Frame viewer link');
-      const monday = `https://10tencreatives.monday.com/boards/${this.board.boardId}/pulses/${record.id}`;
-      const text = `:test_tube: TEST — Bambuu Review Pilot\n:briefcase: Bambuu\n:camera: <${asset.view_url}|${escape(record.name)}>\n:scissors: Test upload (no editor action needed)\n:eyes: Junior · Sammy · Foong (preview only)\n<${monday}|Open Monday test item>`;
-      this.api.checkBudget?.();
-      await this.store.put(key,{pending:true,fileId:asset.id,at:this.now().toISOString()});
-      const ts = await this.api.post(this.board.slackChannelId,text);
-      await this.store.put(key,{sent:true,ts});
-    }
   }
   async run() {
     let startedAt = await this.store.get('startedAt');
@@ -105,22 +90,8 @@ export class Engine {
         failures.push(item.id);
       }
     }
-    // The existing 10Ten bot already watches Edits globally; avoid duplicate notifications.
-    if(this.board.reviewEnabled===false)return {failed:[...new Set(failures)].length};
-    // Continue monitoring already-linked concepts, including those moved off the board.
-    const tracked = await this.store.list({prefix:'item:'});
-    const reviewCursor = await this.store.get('reviewCursor');
-    for (const [key,record] of tracked) {
-      if (key.split(':').length !== 2 || !record.linked) continue;
-      if (reviewCursor && key <= reviewCursor) continue;
-      try { await this.review(record); }
-      catch (error) {
-        if (error.code === 'BATCH_LIMIT') throw error;
-        await this.store.put(`error:${record.id}`,{message:error.message,at:this.now().toISOString()}); failures.push(record.id);
-      }
-      await this.store.put('reviewCursor',key);
-    }
-    await this.store.delete('reviewCursor');
-    return {failed: [...new Set(failures)].length};
+    // The existing 10Ten Bot handles all review messages and editor/reviewer tags.
+    // This service only creates folders and writes Monday links.
+    return {failed:[...new Set(failures)].length};
   }
 }

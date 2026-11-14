@@ -17,7 +17,7 @@ test('Monday GraphQL errors stop work even when HTTP succeeds',async()=>{
 });
 test('write timeout is not automatically retried',async()=>{
   let attempts=0; const api=new Api({},async()=>{attempts++;throw new Error('timeout');});
-  await assert.rejects(()=>api.post('channel','text')); assert.equal(attempts,1);
+  await assert.rejects(()=>api.monday('mutation { example }',{})); assert.equal(attempts,1);
 });
 test('free-plan batch stops before the 41st external request',async()=>{
   let attempts=0; const api=new Api({},async()=>{attempts++;return {ok:true,json:async()=>({})};});

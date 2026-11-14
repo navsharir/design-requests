@@ -1,54 +1,50 @@
-# Monday → Frame.io → Slack
+# Monday → Frame.io folders
 
-Add a named concept to a configured Monday board. This service creates:
+Create a concept directly in Monday without submitting a shoot debrief. This Cloudflare Worker creates the concept folder under the client's current year/month with exactly two children:
 
 ```
-Client / Content / 2026 / 11 - NOV / Concept name / Edits
+Client / Content / YYYY / existing month / Concept name /
+  Raw/
+  Edits/
 ```
 
-It writes the concept folder URL to the existing Monday Frame.io Folder column. The existing 10Ten Bot picks up completed uploads in Edits and sends its normal review message and video. The optional standalone notifier stays disabled to avoid duplicates. No shoot debrief submission is required.
+It writes the concept-folder link into the existing Monday Frame.io Folder column. It does not create instructions files or send Slack messages. The original review automation handles uploads, editor tags, reviewers and video attachments.
 
-## Status — tested 14 November 2026
+## Pilot status — 14 November 2026
 
-Bambuu live test passed: Monday item 3358423550 acquired its Frame.io link; the existing `11 - November` folder was reused; the concept and Edits folders were created; the test video uploaded successfully. Folder access matches the inherited Bambuu team access.
+Deployed as `bambuu-frameio-review` in the owner's Cloudflare account. Scheduled execution remains disabled (`ENABLED=false`) and controlled scans are restricted to test item `3358423550` on Bambuu (`TEST_ITEM_ID`). The public design-request website and existing debrief flow remain independent.
 
-The labelled pilot bot sent a preview at Slack timestamp 1794670538.096529. Crucially, the existing **10Ten Bot** independently picked up this new Edits folder and posted its normal message, reviewer mentions and attached video at 1794670571.183629. No changes to the existing bot were needed. Cloudflare's own Slack sending is now **disabled** to prevent duplicate notifications. Future launch should retain the existing review automation and enable folder/link creation only.
+Verified live:
+- Existing `11 - November` folder reused; concept, Raw and Edits folders exist.
+- Existing Monday folder-link column populated; repeated scans preserve it and do not create duplicate folders.
+- Frame.io upload completed and inherited Bambuu team access matches the parent.
+- Original review automation posted the video in Slack.
+- After Monday editor changes Andrej → Nave, new-upload replies correctly reflected the current editor. Bambuu extras switch between Nave and Andrej, with Junior, Sammy and Foong retained.
 
-`ENABLED=false` keeps scheduled work disabled pending user review. `TEST_ITEM_ID=3358423550` restricts controlled scans to the approved test concept. `ENABLE_SLACK_NOTIFICATIONS=false` leaves reviews to the existing bot. Remove the test-item restriction only for an authorized board launch. Existing board layout, columns, folders and debrief integration remain unchanged; the test item, folders and messages are retained for review.
+The standalone pilot preview sender and its Slack write API have been removed. The single preview posted before that discovery remains as test evidence; no more preview messages will be sent.
 
-Protected `/setup` forms support approved OAuth connection, Slack identity verification and a controlled scan. Set encrypted `SETUP_SECRET`; never publish it. Frame.io OAuth tokens are persisted in the Durable Object and refreshed with rotation. Setup is unavailable while enabled.
+Unresolved launch gates:
+- The latest editor-change reply is reported by Slack as sent by Nave, not 10Ten Bot. Access to the original automation is needed to enforce a consistent bot sender.
+- Review-chat evidence was collected for all 19 client boards. Historical extra reviewers differ by brand and sometimes omit the current editor. Dubai history includes a deactivated reviewer; do not guess a replacement.
+- Already-posted messages retain the editor at upload time. Editing historical messages requires a change to the original automation.
+- Full-volume operation and concurrent slow debrief writes need observation before expansion beyond the pilot.
 
-Runs use at most 40 external requests. New items settle for two minutes and existing links are preserved. Persistent activation boundaries exclude historical items. Live high-volume operation and a simultaneous slow debrief still require observation before expanding beyond Bambuu.
+Validation: 36 automated tests pass. Obsolete standalone-notifier tests were removed with that feature; missing-Raw repair is covered.
 
-## Deploy
+## Configuration and deployment
 
-1. Connect this GitHub repository to Cloudflare Workers, with the root directory set to `automations/monday-frameio`. Alternatively deploy from this directory with the Wrangler CLI. Use a Cloudflare account with Workers and SQLite Durable Objects available.
-2. Install Wrangler with `npm install --save-dev wrangler`, run `npm test`, then `npx wrangler deploy`. The checked-in configuration starts disabled.
-3. Add these Worker secrets using Cloudflare's dashboard or `npx wrangler secret put NAME`. Keep tokens out of GitHub, logs, Pages, and chat:
-   - `MONDAY_TOKEN`: read board items and update link columns.
-   - Frame.io OAuth: `FRAME_CLIENT_ID`, `FRAME_CLIENT_SECRET`, then connect through the protected `/setup` OAuth flow. The worker refreshes short-lived access tokens and persists rotated refresh tokens in its Durable Object. An uncertain refresh is held for reconnection. Alternatively, use `FRAME_TOKEN` for a supported direct credential; legacy developer tokens also require `FRAME_LEGACY_AUTH` set to `true`. Do not use a one-hour access token as a permanent unattended credential.
-   - `FRAME_ACCOUNT_ID`: the verified Frame.io account ID.
-   - `SLACK_TOKEN`: bot credential with `chat:write`; invite the bot to the review channel.
-   - `BOARD_MAP`: JSON array using `board-map.example.json` as its shape. Each board needs its own verified link column and client **Content** folder ID, plus the review channel ID. Configuration is kept in a secret because this repository is public.
-4. Set `ENABLED = "true"` in `wrangler.toml` and deploy. The first successful scan records a permanent activation boundary for each board and skips older items. Deploying again preserves that boundary.
-5. Add one new concept in Monday. After a scan, check the month/concept/Edits folders and Monday link. Upload a small test edit, wait until upload completes, and verify one review message. Run another scan and confirm no duplicates. Test a debrief-created item as well before expanding to more boards.
+1. Install dependencies with `npm ci`; run `npm test`.
+2. Add encrypted Worker secrets `MONDAY_TOKEN`, `FRAME_ACCOUNT_ID`, `FRAME_CLIENT_ID`, `FRAME_CLIENT_SECRET`, `SETUP_SECRET`, and `BOARD_MAP`. Never put credentials in this repository, browser URLs, logs or chat. `SLACK_TOKEN` is optional for the setup identity diagnostic only; this service cannot post messages.
+3. `BOARD_MAP` follows `board-map.example.json`. Each entry identifies its Monday board, link column and verified Frame.io Content folder. The historical `slackChannelId` field remains for configuration compatibility and is not used to send messages.
+4. Deploy with `npx wrangler deploy`. Use the protected `/setup` page to connect approved Frame.io OAuth credentials. Tokens and rotating refresh tokens are persisted in the Durable Object; an uncertain refresh requires reconnection.
+5. Use the protected scan form for the single approved test item. After launch gates are resolved and rollout authorized, remove `TEST_ITEM_ID`, set `ENABLED=true`, and redeploy. Setup routes are unavailable while enabled. Disable by setting `ENABLED=false` and redeploying.
 
-The API tools connected to Codex do not supply reusable runtime credentials to this service. The deployment needs its own credentials entered securely in Cloudflare. Connecting GitHub alone does not activate the automation.
+The scheduled scan runs every five minutes when enabled. Newly created items settle for two minutes, allowing the existing debrief flow to populate its own link. Existing links and items older than the persisted activation boundary are skipped. Existing month folders are matched by numeric month prefix, including full month-name variations; ambiguous matches stop safely.
 
-## Recovery and operating limits
+## Reliability and recovery
 
-Folder operations and Slack sends are checkpointed before external writes. If a write response is lost, the service reconciles an exact folder name if visible; otherwise it holds the operation rather than blindly retrying. A pending Slack send is held for manual inspection. Check the Durable Object storage under the configured `BOARDS` binding for `board:BOARD_ID:error:ITEM_ID` entries. Logs report board IDs and failure counts, without concept names or tokens.
+All boards share a single Durable Object so shared folder creation cannot race. Runs are capped at 40 external requests. Folder creation checkpoints are persisted before writes; an uncertain result is reconciled by its exact saved name or held for manual review. Writes are never blindly retried. A first-ever Raw addition on an already-linked pilot record is supported without rewriting its Monday link or duplicating Edits.
 
-For a pending folder creation, verify the exact parent/name in Frame.io. If the folder exists, the next scan can adopt it. If it definitely does not exist and the original request has settled, remove only the relevant pending key to retry. Never clear the whole store: that loses activation boundaries and delivery history.
+Inspect `board:BOARD_ID:error:ITEM_ID` records and `lastError` for failures. Before resetting a pending folder key, verify whether that exact folder exists in its parent. Never clear the whole store, which would lose activation boundaries and checkpoints. Do not create another folder after an uncertain response without reconciliation.
 
-For a pending Slack record, inspect the channel for that item and file. If delivered, replace the record with `{ "sent": true, "ts": "ACTUAL_MESSAGE_TS" }`; if delivery definitely failed, remove only that pending record. Do not assume a timeout means failure. Keys follow `board:BOARD_ID:sent:ITEM_ID:FILE_ID`.
-
-Two concepts with the same name in a month require a manual link or distinct names; they are never silently merged. Renaming an item after folder creation keeps its original folder. Month selection uses London time at the first provisioning attempt and stays fixed through retries. This service does not import historical concepts, watch pre-existing/debrief-created folders, recurse into subfolders under Edits, or replay every historical version in a stack. Only the current head is checked; use separate files if every intermediate upload must produce a message.
-
-The polling load grows with the number of tracked concepts. Start with one board and monitor request limits and cron duration before expansion. The worker slows Frame.io calls to respect list/create limits; upstream rate limits fail safely and are retried on the next scan. Monitor cron failures in Cloudflare. Disable by setting `ENABLED` to `false` and redeploying.
-
-## Development
-
-`npm test` runs offline integration tests with simulated Monday, Frame.io, Slack and persistent storage. Tests cover retries, duplicate prevention, London month rollover, existing links, upload completion, version heads and activation boundaries. Live credential permissions, deployment and end-to-end behavior still require the activation test above.
-
-API references: [Frame.io folder creation](https://developer.frame.io/platform/api-reference/folders/create), [upload status](https://developer.frame.io/platform/v4/api-reference/files/show-file-upload-status), [Monday pagination](https://developer.monday.com/api-reference/docs/querying-board-items), [Slack posting](https://docs.slack.dev/reference/methods/chat.postMessage/), [Cloudflare durable storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/).
+Two different concepts with the same name are not silently merged. Renaming an item keeps its original folder. Month selection uses London time at initial provisioning and remains pinned across retries. This worker does not backfill historical concepts, delete existing folders, change board layout, or alter the original review automation.

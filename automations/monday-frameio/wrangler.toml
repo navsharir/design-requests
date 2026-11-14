@@ -17,7 +17,6 @@ new_sqlite_classes = ["BoardSync"]
 [vars]
 ENABLED = "false"
 TEST_ITEM_ID = "3358423550"
-ENABLE_SLACK_NOTIFICATIONS = "false"
 
 [observability]
 enabled = true

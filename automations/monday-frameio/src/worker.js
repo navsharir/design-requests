@@ -19,7 +19,7 @@ export default {
   },
   async scheduled(_event, env, ctx) {
     if (env.ENABLED !== 'true') return;
-    for (const key of ['MONDAY_TOKEN','FRAME_ACCOUNT_ID','SLACK_TOKEN']) if (!env[key]) throw new Error(`Missing secret: ${key}`);
+    for (const key of ['MONDAY_TOKEN','FRAME_ACCOUNT_ID']) if (!env[key]) throw new Error(`Missing secret: ${key}`);
     if (!env.FRAME_TOKEN && !(env.FRAME_CLIENT_ID && env.FRAME_CLIENT_SECRET)) throw new Error('Connect Frame.io OAuth');
     // All boards share one object so shared parent folders cannot race each other.
     boards(env);
@@ -56,7 +56,6 @@ export class BoardSync extends DurableObject {
           const authStore = {get:k=>storage.get(k),put:(k,v)=>storage.put(k,v)};
           api.tokenProvider=()=>{api.checkBudget();return frameAccessToken(this.env,authStore,(...args)=>api.request(...args));};
           board.testItemId=this.env.TEST_ITEM_ID;
-          board.reviewEnabled=this.env.ENABLE_SLACK_NOTIFICATIONS==='true';
           const result = await new Engine(api,store,board).run();
           if(board.testItemId){const test=await api.item(board.testItemId);result.test={createdAt:test.created_at,startedAt:await store.get('startedAt'),linked:test.column_values.find(c=>c.id===board.linkColumnId)?.value};}
           console.log(JSON.stringify({boardId:board.boardId,...result}));
