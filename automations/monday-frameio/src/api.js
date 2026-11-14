@@ -1,8 +1,12 @@
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export class Api {
-  constructor(env, transport = fetch) { this.env = env; this.transport = transport; }
+  constructor(env, transport = fetch) { this.env = env; this.transport = transport; this.calls = 0; }
+  checkBudget() {
+    if (this.calls >= 40) { const error = new Error('Continue on next scheduled batch'); error.code = 'BATCH_LIMIT'; throw error; }
+  }
   async request(url, options = {}) {
+    this.checkBudget(); this.calls++;
     // Do not retry writes: a lost response does not mean the write failed.
     const res = await this.transport(url, {...options, signal: AbortSignal.timeout(20000)});
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

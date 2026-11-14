@@ -19,3 +19,9 @@ test('write timeout is not automatically retried',async()=>{
   let attempts=0; const api=new Api({},async()=>{attempts++;throw new Error('timeout');});
   await assert.rejects(()=>api.post('channel','text')); assert.equal(attempts,1);
 });
+test('free-plan batch stops before the 41st external request',async()=>{
+  let attempts=0; const api=new Api({},async()=>{attempts++;return {ok:true,json:async()=>({})};});
+  for(let i=0;i<40;i++) await api.request('https://example.com');
+  await assert.rejects(()=>api.request('https://example.com'),e=>e.code==='BATCH_LIMIT');
+  assert.equal(attempts,40);
+});

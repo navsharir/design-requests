@@ -1,4 +1,4 @@
-name = "monday-frameio-review"
+name = "bambuu-frameio-review"
 main = "src/worker.js"
 compatibility_date = "2026-11-01"
 workers_dev = true

@@ -31,6 +31,7 @@ export class Engine {
     // Never silently bind two distinct Monday concepts to the same named folder.
     if (matches.length) throw new Error('Folder name already exists; link it manually or rename the concept');
     if (saved?.pending) throw new Error('Uncertain folder creation: check Frame.io before resetting the pending record');
+    this.api.checkBudget?.();
     await this.store.put(key,{pending:true,name,parent});
     const folder = await this.api.createFolder(parent,name);
     if (!folder?.id || !folder.view_url) throw new Error('Frame folder response incomplete');
@@ -79,6 +80,7 @@ export class Engine {
       if (!asset.view_url?.startsWith('https://next.frame.io/')) throw new Error('Missing Frame viewer link');
       const monday = `https://10tencreatives.monday.com/boards/${this.board.boardId}/pulses/${record.id}`;
       const text = `Edit ready for review: ${escape(record.name)}\n${escape(asset.name)}\n<${asset.view_url}|Review in Frame.io> · <${monday}|Open Monday item>`;
+      this.api.checkBudget?.();
       await this.store.put(key,{pending:true,fileId:asset.id,at:this.now().toISOString()});
       const ts = await this.api.post(this.board.slackChannelId,text);
       await this.store.put(key,{sent:true,ts});
@@ -97,17 +99,25 @@ export class Engine {
         await this.provision(item);
         await this.store.delete(`error:${item.id}`);
       } catch (error) {
+        if (error.code === 'BATCH_LIMIT') throw error;
         await this.store.put(`error:${item.id}`,{message:error.message,at:this.now().toISOString()});
         failures.push(item.id);
       }
     }
     // Continue monitoring already-linked concepts, including those moved off the board.
     const tracked = await this.store.list({prefix:'item:'});
+    const reviewCursor = await this.store.get('reviewCursor');
     for (const [key,record] of tracked) {
       if (key.split(':').length !== 2 || !record.linked) continue;
+      if (reviewCursor && key <= reviewCursor) continue;
       try { await this.review(record); }
-      catch (error) { await this.store.put(`error:${record.id}`,{message:error.message,at:this.now().toISOString()}); failures.push(record.id); }
+      catch (error) {
+        if (error.code === 'BATCH_LIMIT') throw error;
+        await this.store.put(`error:${record.id}`,{message:error.message,at:this.now().toISOString()}); failures.push(record.id);
+      }
+      await this.store.put('reviewCursor',key);
     }
+    await this.store.delete('reviewCursor');
     return {failed: [...new Set(failures)].length};
   }
 }

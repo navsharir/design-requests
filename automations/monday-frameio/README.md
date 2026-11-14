@@ -10,7 +10,9 @@ It writes the concept folder URL to the existing Monday Frame.io Folder column. 
 
 ## Status
 
-Implementation prepared for Cloudflare Workers with persistent Durable Object storage. **Not deployed or enabled.** No live folders, Monday values, or Slack messages have been changed. The public design-request webpage is independent of this service.
+Deployed to the owner's existing Cloudflare account as `bambuu-frameio-review`, with persistent Durable Object storage and a Bambuu-only board mapping. **Disabled pending runtime credentials and a live pilot test.** No live folders, Monday values, or Slack messages have been changed by this service. The public design-request webpage is independent of this service.
+
+Each run is limited to 40 external API requests, below the Free plan's 50-request limit. Incomplete provisioning resumes using persisted checkpoints; folder review rotates through saved records across runs. This batch limit still needs observation under live load, including Cloudflare CPU and duration limits.
 
 Every five minutes it scans configured boards and the Edits folders it created. New items must be at least two minutes old, allowing the existing debrief integration to populate its own link first. Items with existing links are skipped. The original debrief source was not accessible, so coexistence still needs a live test; a very slow debrief can race the final link check. If this occurs, stop this service and reconcile the item/folder before continuing.
 

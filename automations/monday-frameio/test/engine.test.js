@@ -92,3 +92,8 @@ test('one failed concept does not block subsequent concepts',async()=>{
   f.api.items=async function*(){yield bad;yield f.item;};
   const result=await f.engine.run(); assert.equal(result.failed,1); assert.equal(f.count,4);
 });
+test('batch limit before a write does not leave an uncertain pending record',async()=>{
+  const f=fixture(); f.api.checkBudget=()=>{const e=new Error('batch');e.code='BATCH_LIMIT';throw e;};
+  await assert.rejects(()=>f.engine.ensure('content','2026','year',true),e=>e.code==='BATCH_LIMIT');
+  assert.equal(await f.store.get('year'),undefined); assert.equal(f.count,0);
+});

@@ -44,6 +44,7 @@ export class BoardSync extends DurableObject {
           const result = await new Engine(new Api(this.env),store,board).run();
           console.log(JSON.stringify({boardId:board.boardId,...result}));
         } catch (error) {
+          if (error.code === 'BATCH_LIMIT') { console.log(JSON.stringify({boardId:board.boardId,batched:true})); continue; }
           await storage.put(prefix+'lastError',{message:error.message,at:new Date().toISOString()});
           console.error(JSON.stringify({boardId:board.boardId,failed:true}));
         }
