@@ -1,0 +1,8 @@
+[
+  {
+    "boardId": "YOUR_MONDAY_BOARD_ID",
+    "linkColumnId": "YOUR_FRAME_IO_LINK_COLUMN_ID",
+    "contentFolderId": "YOUR_CLIENT_CONTENT_FOLDER_ID",
+    "slackChannelId": "YOUR_REVIEW_CHANNEL_ID"
+  }
+]
